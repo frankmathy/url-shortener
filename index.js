@@ -15,10 +15,19 @@ const urls = db.get('urls');
 urls.createIndex({ slug: 1 }, { unique: true });
 
 const app = express();
-app.use(helmet());
 app.use(morgan('tiny'));
 app.use(express.json());
 app.use(express.static('./public'));
+app.use(
+  helmet.contentSecurityPolicy({
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'https:/unpkg.com/'],
+      objectSrc: ["'self'", 'https:/unpkg.com/'],
+      upgradeInsecureRequests: []
+    }
+  })
+);
 
 app.get('/', (req, res) => {
   res.json({
