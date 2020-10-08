@@ -29,7 +29,7 @@ app.post('/url', (req, res) => {
   // create a short url
 });
 
-const port = process.envPORT || 1337;
+const port = process.env.PORT || 1337;
 app.listen(port, () => {
   console.log(`Lisening at http://localhost:${port}`);
 });
