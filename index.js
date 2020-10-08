@@ -1,14 +1,22 @@
 const express = require('express');
-const cors = require('cors');
 const morgan = require('morgan');
 const helmet = require('helmet');
 const yup = require('yup');
 const { nanoid } = require('nanoid');
+const monk = require('monk');
+
+require('dotenv').config();
+
+const db = monk(process.env.MONGO_URI);
+db.then(() => {
+  console.log(`Connected to MongoDB: ${process.env.MONGO_URI}`);
+});
+const urls = db.get('urls');
+urls.createIndex({ slug: 1 }, { unique: true });
 
 const app = express();
 app.use(helmet());
 app.use(morgan('tiny'));
-app.use(cors());
 app.use(express.json());
 app.use(express.static('./public'));
 
@@ -22,8 +30,17 @@ app.get('/url/:id', (req, res) => {
   //TODO get a short URL by ID
 });
 
-app.get('/:id', (req, res) => {
-  //TODO redirect to URL
+app.get('/:id', async (req, res, error) => {
+  const { id: slug } = req.params;
+  try {
+    const url = await urls.findOne({ slug });
+    if (url) {
+      res.redirect(url.url);
+    }
+    res.redirect(`/?error=${slug} not found`);
+  } catch (error) {
+    res.redirect(`/?error=Link not found`);
+  }
 });
 
 const schema = yup.object().shape({
@@ -38,29 +55,31 @@ const schema = yup.object().shape({
     .required()
 });
 
-app.post('/url', (req, res, next) => {
+app.post('/url', async (req, res, next) => {
   let { slug, url } = req.body;
-  schema
-    .isValid({
+  try {
+    await schema.validate({
       slug,
       url
-    })
-    .then(valid => {
-      console.log(`Schema valid = ${valid}`);
-      if (valid) {
-        if (!slug) {
-          slug = nanoid(5);
-        }
-        slug = slug.toLowerCase();
-        res.json({
-          slug,
-          url
-        });
-      } else {
-        console.log('Error');
-        next({ message: 'Incorrect slug format' });
-      }
     });
+    if (!slug) {
+      slug = nanoid(5);
+    } else {
+      const existing = await urls.findOne({ slug });
+      if (existing) {
+        throw new Error('Slug in use. 🍔');
+      }
+    }
+    slug = slug.toLowerCase();
+    const newUrl = {
+      url,
+      slug
+    };
+    const created = await urls.insert(newUrl);
+    res.json(created);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.use((error, req, res, next) => {
@@ -71,8 +90,7 @@ app.use((error, req, res, next) => {
   }
   res.json({
     message: error.message,
-    stack:
-      process.env.NODE_ENV === 'production' ? 'no stack available' : error.stack
+    stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
   });
 });
 
